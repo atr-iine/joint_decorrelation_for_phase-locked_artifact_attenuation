@@ -1,10 +1,12 @@
-function [outEEG, errorflag] = jointdecorrelation(inEEG, thresh)
+function [outEEG, errorflag] = jointdecorrelation(inEEG, thresh, eventtype, scale)
 % Joint correlation
-%   [outEEG, errorflag] = jointdecorrelation(inEEG, thresh)
+%   [outEEG, errorflag] = jointdecorrel(inEEG, thresh)
 %
 %   Inputs:
 %       inEEG: EEG struct of EEGLAB
 %       thresh: Threshold for BCG correction
+%       eventtype: EEG.event.type that serve as a reference point in phase-locking
+%       scale: Scaling of amplitude (e.g., uV to V)
 %   Outputs:
 %       outEEG: EEG struct of EEGLAB
 %       errorflag: If true, some error has occurred in computation; otherwise, no error
@@ -19,8 +21,16 @@ function [outEEG, errorflag] = jointdecorrelation(inEEG, thresh)
 %   EEG-fMRI. Imaging Neuroscience. https://doi.org/10.1162/imag_a_00272 
 %
 
+    % Default arg values (Change as needed)
+    arguments
+        inEEG
+        thresh
+        eventtype = 'fmrib_rpeak' % R-peak of heart beat in our case
+        scale = 1e-6; % uV to V just to be consistent with MNE
+    end
+
     try
-        ecg_evt_ixs = find(ismember({inEEG.event.type},{'fmrib_rpeak'}));
+        ecg_evt_ixs = find(ismember({inEEG.event.type},{eventtype}));
         tmp = struct2cell(inEEG.event);
         latency = cell2mat(squeeze(tmp(2,1,:)));
         ecg_trig = int64(round(latency(ecg_evt_ixs))); % Note: Latency has already been adjusted in our case
@@ -36,8 +46,8 @@ function [outEEG, errorflag] = jointdecorrelation(inEEG, thresh)
         IR = IR(all((IR > 0) & (IR < size(inEEG.times,2)),2),:); 
         IR = IR(1:size(I,1),:);
     
-        x_art = art_ref(inEEG,I);
-        x_ref = art_ref(inEEG,IR);
+        x_art = art_ref(inEEG,I,scale);
+        x_ref = art_ref(inEEG,IR,scale);
     
         x_ref_flat = reshape(x_ref,size(inEEG.data,1),[],1);
         cov_x = (x_ref_flat * x_ref_flat') / size(x_ref_flat,2);
@@ -92,12 +102,12 @@ function [outEEG, errorflag] = jointdecorrelation(inEEG, thresh)
     end
 end
 
-function outcome = art_ref(inEEG,I)
+function outcome = art_ref(inEEG,I, scale)
     np = size(inEEG.data,1);
     I_r = size(I,1);
     I_c = size(I,2);
     tmpdata = inEEG.data;
-    tmpdata = tmpdata / 1000000; % uV to V just to be consistent with MNE
+    tmpdata = tmpdata * scale; 
     outcome = zeros(np,I_c,I_r);                
     Ivec = I(:)';
     for p = 1:np
